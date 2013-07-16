@@ -1,0 +1,166 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ * @return string
+ */
+
+function ws_comment_menu() {
+  $items = array();
+
+  $items['ws_comment/save/%'] = array(
+    'access callback' => TRUE,
+    'page arguments' => array(2),
+    'page callback' => 'ws_comment_save',
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function ws_comment_block_info() {
+  $blocks['ws_comment_chat'] = array(
+    'info' => t('Web Socket Comments'),
+  );
+
+  return $blocks;
+}
+
+
+/**
+ * Implements hook_block_view().
+ */
+function ws_comment_block_view($delta = '') {
+  $block = array();
+
+  switch ($delta) {
+    case 'ws_comment_chat':
+      $path = $_GET['q'];
+      $path = explode('/', $path);
+      $block['subject'] = t('Web Socket Comments');
+      $block['content'] = drupal_get_form('ws_comment_chat_form');
+
+      break;
+  }
+
+  return $block;
+}
+
+
+function ws_comment_chat_form($form, &$form_state) {
+  global $user;
+  $setting = array(
+    'ws_comment' => array(
+      'nid' => arg(1),
+      'uid' => $user->uid,
+    ),
+  );
+  $path = drupal_get_path('module', 'ws_comment');
+  drupal_add_css($path . '/css/ws_comment.css');
+  drupal_add_js($setting, 'setting');
+  drupal_add_js($path . '/js/ws_comment.js');
+
+
+  $form = array();
+  $form['#prefix'] = '<div class="chat_wrapper">';
+  $form['#suffix'] = '</div>';
+  $form['markup'] = array(
+    '#markup' => '<div class="message_box" id="message_box">' . ws_comment_get_comments() . '</div>',
+    '#type' => 'markup',
+  );
+  $form['name'] = array(
+    '#attributes' => array(
+      'id' => 'name',
+    ),
+    '#size' => 15,
+    '#title' => 'Name',
+    '#type' => 'textfield',
+  );
+  if ($user->uid != 0) {
+    $form['name']['#value'] = $user->name;
+    $form['name']['#disabled'] = TRUE;
+  }
+
+  $form['message'] = array(
+    '#attributes' => array(
+      'id' => 'message',
+    ),
+    '#title' => 'Message',
+    '#type' => 'textfield',
+  );
+
+  $form['send'] = array(
+    '#attributes' => array(
+      'id' => 'send-btn',
+    ),
+    '#value' => 'Send',
+    '#type' => 'button',
+  );
+
+  return $form;
+}
+
+function ws_comment_get_comments() {
+  $nid = arg(1);
+  $content = '';
+
+
+  $query = db_select('comment', 'c');
+  $query->leftJoin('users', 'u', 'u.uid=c.uid');
+  $query->condition('nid', $nid);
+  $query->fields('c', array('subject'));
+  $query->fields('u', array('name'));
+  $result = $query->execute();
+  while ($row = $result->fetch()) {
+    if (isset($row->name) && !empty($row->name)) {
+      $name = $row->name;
+    }
+    else {
+      $name = 'Anonymous';
+    }
+    $content .= '<div><span class="user_name">' . $name . ': </span><span class="user_message">' . $row->subject . '</span></div>';
+  }
+
+  return $content;
+
+}
+
+function ws_comment_save($msg) {
+  $msg = json_decode($msg);
+
+  dsm($msg);
+
+  $anonymous = 0;
+  if($msg->uid == 0) {
+    $anonymous = 1;
+  }
+
+  $comment = (object) array(
+    'nid' => $msg->nid,
+    'cid' => 0,
+    'pid' => 0,
+    'uid' => $msg->uid,
+    'mail' => '',
+    'is_anonymous' => $anonymous,
+    'homepage' => '',
+    'status' => COMMENT_PUBLISHED,
+    'subject' => $msg->message,
+    'language' => LANGUAGE_NONE,
+    'comment_body' => array(
+      LANGUAGE_NONE => array(
+        0 => array (
+          'value' => $msg->message,
+          'format' => 'filtered_html'
+        )
+      )
+    ),
+  );
+
+  comment_submit($comment);
+  comment_save($comment);
+
+  return TRUE;
+}

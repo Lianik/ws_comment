@@ -1,0 +1,4 @@
+name = WS Comments
+description = Provides comments block with websockets implementation.
+core = 7.x
+package = WS
